@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "score_layout requires layout",
+    "details": {
+      "intent": "score_layout",
+      "field": "payload.layout"
+    }
+  }
+}

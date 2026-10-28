@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "insufficient_scope",
+    "message": "experiences:write scope is required for this endpoint"
+  }
+}

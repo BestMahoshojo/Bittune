@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "device_disabled",
+    "message": "this device has been disabled by an administrator"
+  }
+}

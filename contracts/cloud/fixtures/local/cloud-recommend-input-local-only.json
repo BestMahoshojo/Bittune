@@ -1,0 +1,13 @@
+{
+  "target": {
+    "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "input_tokens": 2048,
+    "output_tokens": 256,
+    "concurrency": 2
+  },
+  "constraints": {
+    "must_be_offline": false,
+    "max_memory_percent": 80
+  },
+  "mode_override": "local_only"
+}

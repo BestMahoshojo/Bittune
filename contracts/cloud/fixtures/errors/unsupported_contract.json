@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "unsupported_contract",
+    "message": "schema_version unknown-v7 is not supported",
+    "details": { "supported": ["recommendation-v2"] }
+  }
+}

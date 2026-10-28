@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "export_id": "exp-2a3c4d5e6f708192a3b4c5d6e",
+      "transport_status": "received",
+      "publication_status": "pending_review",
+      "visibility_scope": "public",
+      "author_display": "nickname",
+      "content_hash": "sha256:4d1a0ec535f1e1f0e30ba4f4c8d9f0a2b2c3d4e5f60718293a4b5c6d7e8f9012",
+      "source_report_hash": "sha256:9c1a86e4bfd2c1a8cd3e5f60718293a4b5c6d7e8f901234d1a0ec535f1e1f0e3",
+      "received_at": "2026-09-01T09:12:04Z",
+      "publication_consented_at": "2026-09-01T10:00:00Z",
+      "publication_title": "RTX 4090 上 Qwen2.5-72B 时延下降 20%",
+      "publication_summary": "同一负载下调低 KV cache 压力后端到端时延下降。",
+      "model_id": "Qwen/Qwen2.5-72B-Instruct",
+      "gpu_product": "RTX 4090",
+      "outcome": "success"
+    }
+  ]
+}

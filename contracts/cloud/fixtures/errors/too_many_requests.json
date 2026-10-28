@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "too_many_requests",
+    "message": "rate limit exceeded; retry after the advertised delay"
+  }
+}

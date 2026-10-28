@@ -1,0 +1,8 @@
+{
+  "name": "official",
+  "api_base_url": "https://cloud.example.com",
+  "oidc_issuer": "https://login.example.com/realms/bittune",
+  "oidc_client_id": "bittune-local",
+  "oidc_audience": "bittune-cloud-api",
+  "scopes": ["openid", "offline_access", "recommendations:read", "experiences:write"]
+}

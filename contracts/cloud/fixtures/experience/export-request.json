@@ -1,0 +1,85 @@
+{
+  "schema_version": "experience-export-v2",
+  "source_report_hash": "sha256:7e4c3b2a1d0f9e8c7b6a5d4e3f2c1b0a9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4",
+  "consent_confirmed": true,
+  "consent_at": "2026-09-01T09:10:00Z",
+  "evidence_level": "local_measured",
+  "environment": {
+    "gpu_arch": "Ada",
+    "gpu_count": 8,
+    "vram_bucket": "24-48GiB",
+    "vram_gib": 24,
+    "gpu_product": "RTX 4090",
+    "driver_major": "550",
+    "cuda_major": "12",
+    "driver_version": "550.90.07",
+    "cuda_version": "12.4",
+    "compute_capability": "8.9",
+    "os": "Linux 6",
+    "memory_gib": 128
+  },
+  "model": {
+    "model_id": "Qwen/Qwen2.5-72B-Instruct",
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "quantization": "awq"
+  },
+  "runtime": {
+    "runtime_kind": "vllm",
+    "runtime_major": "0",
+    "runtime_version": "0.8.5",
+    "image_digest": "sha256:3b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
+  },
+  "workload": {
+    "input_tokens": 4096,
+    "output_tokens": 256,
+    "concurrency": 4,
+    "request_count": 32,
+    "input_bucket": "2049-8192",
+    "output_bucket": "0-2048",
+    "load_bucket": "2-8",
+    "workload_hash": "sha256:1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2"
+  },
+  "config": {
+    "config_hash": "sha256:6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e",
+    "fields": {
+      "max_model_len": 32768,
+      "gpu_memory_utilization": 0.9,
+      "max_num_seqs": 256
+    }
+  },
+  "outcome": "success",
+  "metrics": [
+    {
+      "name": "mean_e2e_latency_ms",
+      "unit": "ms",
+      "repetitions": 3,
+      "mean": 480.0,
+      "stdev": 12.5
+    },
+    {
+      "name": "output_tokens_per_second",
+      "unit": "tokens/s",
+      "repetitions": 3,
+      "mean": 4210.7,
+      "stdev": 88.2
+    }
+  ],
+  "baseline": {
+    "model_id": "Qwen/Qwen2.5-72B-Instruct",
+    "mean": 600.0,
+    "unit": "ms",
+    "repetitions": 3
+  },
+  "candidate": {
+    "model_id": "Qwen/Qwen2.5-72B-Instruct",
+    "mean": 480.0,
+    "unit": "ms",
+    "repetitions": 3
+  },
+  "delta": {
+    "unit": "ms",
+    "value_pct": 20.0,
+    "target": "lower_better",
+    "objective_metric": "mean_e2e_latency_ms"
+  }
+}

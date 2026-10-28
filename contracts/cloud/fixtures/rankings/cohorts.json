@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "gpu_product": "RTX 4090",
+      "gpu_count": 1,
+      "vram_gib": 24,
+      "model_id": "Qwen/Qwen2.5-72B-Instruct",
+      "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+      "quantization": "awq",
+      "runtime_kind": "vllm",
+      "runtime_major": "0",
+      "load_bucket": "2-8",
+      "driver_major": "550",
+      "cuda_major": "12",
+      "entry_count": 1
+    }
+  ]
+}

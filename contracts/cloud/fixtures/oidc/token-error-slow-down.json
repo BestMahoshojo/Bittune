@@ -1,0 +1,4 @@
+{
+  "error": "slow_down",
+  "error_description": "polling too fast; increase the interval by 5 seconds"
+}

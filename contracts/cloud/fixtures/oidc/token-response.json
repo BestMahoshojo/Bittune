@@ -1,0 +1,7 @@
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImJpdHR1bmUtdGVzdC0yMDI2In0.eyJpc3MiOiJodHRwczovL2xvZ2luLmV4YW1wbGUuY29tL3JlYWxtcy9iaXR0dW5lIiwiYXVkIjoiYml0dHVuZS1jbG91ZC1hcGkiLCJzdWIiOiJ1c2VyLTAwMSIsImV4cCI6MTc3MTY2MDQwMCwiaWF0IjoxNzcwNDUwNDAwLCJzY29wZSI6Im9wZW5pZCBvZmZsaW5lX2FjY2VzcyByZWNvbW1lbmRhdGlvbnM6cmVhZCBleHBlcmllbmNlczp3cml0ZSJ9.invalid-signature-placeholder",
+  "token_type": "Bearer",
+  "expires_in": 300,
+  "refresh_token": "refresh-token-test-only",
+  "scope": "openid offline_access recommendations:read experiences:write"
+}

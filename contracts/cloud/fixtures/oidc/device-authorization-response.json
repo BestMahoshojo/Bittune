@@ -1,0 +1,8 @@
+{
+  "device_code": "O6R7eZk1r3M2p4t5",
+  "user_code": "WDJB-MJSL",
+  "verification_uri": "https://login.example.com/realms/bittune/device",
+  "verification_uri_complete": "https://login.example.com/realms/bittune/device?user_code=WDJB-MJSL",
+  "expires_in": 600,
+  "interval": 5
+}

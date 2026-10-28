@@ -1,0 +1,3246 @@
+openapi: 3.0.3
+info:
+  title: BitTune Cloud API
+  version: 0.1.0
+  description: |
+    The HTTPS JSON API behind BitTune Local. It is the only interface the
+    Local Runtime's Cloud Bridge talks to: OIDC device authorization happens
+    between Local and the IdP directly, and this API only verifies Bearer
+    access tokens signed by the configured IdP.
+
+    Contract rules fixed for Phase 2:
+
+    * `/v1` is the HTTP, authentication and error-format version.
+    * Payload schemas evolve independently under `schema_version`
+      (`recommendation-v2`, `experience-export-v2`).
+    * Recommendation search is fixed by `serving_search-v1`; candidate data
+      is historical measurements, catalog rows, or simulated priors, never a
+      guarantee for the requesting machine.
+    * The client never supplies account identity in a payload or query
+      parameter; Cloud derives account and device scope from the token.
+    * This file is the unique contract source. Local keeps a byte mirror and
+      generated types, and all three ends validate the same JSON fixtures.
+
+    Contract rules added for Phase 3:
+
+    * The bearer subject is the only account identity; clients never supply
+      account identifiers in payloads or query parameters.
+    * Publication metadata lives on `experience_exports`; `publication-v1`
+      consent is required before an export can become a public case.
+    * Discovery is a server-side projection of public, approved, not-retracted
+      exports; anonymous discovery reads never return private fields.
+    * `reproduction-intent-v1` is issued by the Cloud server only, contains
+      goals and constraints, and never commands, paths, secrets or credentials.
+
+    Contract rules added for Phase 4:
+
+    * Cloud Receive accepts only `experience-export-v2`. An
+      `experience-export-v1` PUT is 422 `unsupported_contract`.
+    * Case library, compare and official rankings are read projections of the
+      same public `experience_exports` row. There is no second content table.
+    * Compare never returns a `rank` field. Official rankings use
+      `cohort-rank-v1` and return 200 with `empty_reason` + `rules` when a
+      cohort has no eligible rows.
+    * Admin list/feature/moderate share `moderation:write` (no separate
+      moderation:read). Title and summary are publication metadata and never
+      enter `content_hash`.
+  termsOfService: https://cloud.example.com/terms
+  contact:
+    name: BitCloud
+    email: litianqi@bitcloud.com.cn
+servers:
+  - url: https://cloud.example.com
+    description: Official BitTune Cloud (placeholder until the runbook publishes the real endpoint).
+tags:
+  - name: health
+  - name: device
+  - name: recommendations
+  - name: experience-exports
+  - name: me
+  - name: profiles
+  - name: discovery
+  - name: compare
+  - name: rankings
+  - name: admin
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe; no authentication.
+      operationId: healthz
+      responses:
+        "200":
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /v1/device:
+    get:
+      tags: [device]
+      summary: Return the device state bound to the current token.
+      description: |
+        Status is derived from the authenticated token and the installation
+        hash header: the binding must belong to the token account. Account or
+        device identifiers in query parameters are ignored and carry no
+        authorization meaning.
+      operationId: getDevice
+      security:
+        - bearerAuth: [recommendations:read]
+      parameters:
+        - $ref: "#/components/parameters/InstallationHash"
+      responses:
+        "200":
+          description: Device state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceStatus"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/device/claim:
+    post:
+      tags: [device]
+      summary: Bind the current installation to the current OIDC subject.
+      description: |
+        First claim binds the account; repeated claims from the same
+        installation_id_hash are idempotent. Switching accounts requires an
+        explicit disconnect first.
+      operationId: claimDevice
+      security:
+        - bearerAuth: [recommendations:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceClaimRequest"
+      responses:
+        "200":
+          description: Device binding, created or already present.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceClaimResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/device/disconnect:
+    post:
+      tags: [device]
+      summary: Unbind the device identified by the current token.
+      description: |
+        Local always clears its own credentials and binding metadata first;
+        this call only makes Cloud record the disconnect. Token expiration or
+        Cloud outage never blocks the local cleanup.
+      operationId: disconnectDevice
+      security:
+        - bearerAuth: [recommendations:read]
+      parameters:
+        - $ref: "#/components/parameters/InstallationHash"
+      responses:
+        "204":
+          description: Disconnect recorded.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/recommendations/query:
+    post:
+      tags: [recommendations]
+      summary: Return catalog candidates, account history, and serving-search priors.
+      description: |
+        Accepts only `recommendation-v2` (`serving_search-v1`). A missing or
+        any other schema_version is 422 `unsupported_contract`; `supported`
+        lists only `recommendation-v2`.
+      operationId: queryRecommendations
+      security:
+        - bearerAuth: [recommendations:read]
+      parameters:
+        - $ref: "#/components/parameters/InstallationHash"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecommendationQueryEnvelopeV2"
+      responses:
+        "200":
+          description: Serving-search candidates; may be empty with notes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecommendationQueryResponseV2"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/experience-exports/{export_id}:
+    parameters:
+      - $ref: "#/components/parameters/ExportId"
+    put:
+      tags: [experience-exports]
+      summary: Receive one consented, redacted experience export.
+      description: |
+        Idempotent on export_id + content_hash: the same pair returns the
+        original receipt, a different hash for the same id is rejected with
+        409 conflict. Requires the `experiences:write` scope and
+        `consent_confirmed: true`. An `Idempotency-Key` header is accepted
+        and echoed back for caller correlation. Only `experience-export-v2`
+        is accepted; a v1 payload is 422 `unsupported_contract`.
+      operationId: putExperienceExport
+      security:
+        - bearerAuth: [experiences:write]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/InstallationHash"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExperienceExportPayload"
+      responses:
+        "200":
+          description: Receipt, from this call or the idempotent original.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceReceipt"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [experience-exports]
+      summary: Return the receipt state for the current account's own export.
+      description: Exports of other accounts answer 404.
+      operationId: getExperienceExport
+      security:
+        - bearerAuth: [recommendations:read]
+      responses:
+        "200":
+          description: Receipt state (received or retracted).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceReceipt"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/experience-exports/{export_id}/retract:
+    post:
+      tags: [experience-exports]
+      summary: Retract a received export; later recommendations exclude it immediately.
+      description: |
+        Local device clients send the installation hash header and run the
+        device binding check; Cloud Web may omit it and is still scoped to
+        the export owner derived from the bearer subject.
+      operationId: retractExperienceExport
+      security:
+        - bearerAuth: [experiences:write]
+      parameters:
+        - $ref: "#/components/parameters/ExportId"
+        - $ref: "#/components/parameters/InstallationHashOptional"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetractRequest"
+      responses:
+        "200":
+          description: Receipt now marked retracted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceReceipt"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/me:
+    get:
+      tags: [me]
+      summary: Return the current account's own profile.
+      description: |
+        The profile is created with private defaults on first access; the
+        subject is always derived from the bearer token and never returned.
+      operationId: getMe
+      security:
+        - bearerAuth: [profile:read]
+      responses:
+        "200":
+          description: Current profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [me]
+      summary: Update the current account's own profile fields.
+      operationId: updateMe
+      security:
+        - bearerAuth: [profile:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfilePatchV1"
+      responses:
+        "200":
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/profiles/{handle}:
+    get:
+      tags: [profiles]
+      summary: Public profile by handle.
+      description: |
+        Anonymous read; only public profiles are returned and private or
+        missing handles answer the same 404 without revealing existence.
+      operationId: getProfile
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Handle"
+      responses:
+        "200":
+          description: Public profile fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicProfileV1"
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/me/activity:
+    get:
+      tags: [me]
+      summary: Paginated list of the current account's own activity events.
+      operationId: listMyActivity
+      security:
+        - bearerAuth: [profile:read]
+      parameters:
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Activity page ordered newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityPageV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/me/devices:
+    get:
+      tags: [me]
+      summary: Private device summary for the current account.
+      description: |
+        Never returns serial numbers, hostnames, IPs, paths, installation
+        hashes or live resource data.
+      operationId: listMyDevices
+      security:
+        - bearerAuth: [profile:read]
+      responses:
+        "200":
+          description: Device summary page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSummaryPageV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/me/experience-exports:
+    get:
+      tags: [me]
+      summary: The current account's own exports with transport and publication state.
+      operationId: listMyExperienceExports
+      security:
+        - bearerAuth: [experiences:read]
+      parameters:
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Own exports, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceExportPageV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/me/experience-exports/{export_id}:
+    get:
+      tags: [me]
+      summary: Owner-only export detail with the stored v2 payload summary.
+      description: |
+        Cross-account lookups answer 404. The payload is already a whitelist;
+        the client must not PATCH numbers. Title, summary, rejection_reason
+        and featured are publication metadata and do not enter content_hash.
+      operationId: getMyExperienceExport
+      security:
+        - bearerAuth: [experiences:read]
+      parameters:
+        - $ref: "#/components/parameters/ExportId"
+      responses:
+        "200":
+          description: Owner export detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceExportDetailV2"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/me/data-export:
+    get:
+      tags: [me]
+      summary: Download a JSON bundle of the account's own data.
+      description: |
+        Contains profile, own exports, consent records and activity; never
+        raw prompts, logs, datasets, secrets or the OIDC subject.
+      operationId: exportMyData
+      security:
+        - bearerAuth: [data:export]
+      responses:
+        "200":
+          description: Data export bundle.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataExportBundleV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/me/data-delete:
+    post:
+      tags: [me]
+      summary: Delete cloud data or the whole account.
+      description: |
+        Repeated requests are idempotent and return the completed receipt;
+        local reports and artifacts are never affected by Cloud deletion.
+      operationId: deleteMyData
+      security:
+        - bearerAuth: [data:delete]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataDeleteRequestV1"
+      responses:
+        "200":
+          description: Completed deletion receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataDeleteReceiptV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/experience-exports/{export_id}/publication:
+    post:
+      tags: [experience-exports]
+      summary: Record publication consent and enter the review flow.
+      description: |
+        Account-scoped by bearer subject; the installation header plays no
+        role. The server re-derives the public projection from the stored
+        payload instead of trusting the submitted field list. Organization
+        scope is not enabled and is rejected. `title` is required; `summary`
+        is optional opinion text. A `rejected` export may be resubmitted
+        after the author edits title/summary only.
+      operationId: publishExperienceExport
+      security:
+        - bearerAuth: [experiences:write]
+      parameters:
+        - $ref: "#/components/parameters/ExportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicationRequestV1"
+      responses:
+        "200":
+          description: Export state after the consent was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceExportStateV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/experience-exports/{export_id}/delete:
+    post:
+      tags: [experience-exports]
+      summary: Delete the Cloud copy of an export.
+      description: |
+        Account-scoped deletion of Cloud data only; the local report,
+        benchmark results and artifacts are never touched.
+      operationId: deleteExperienceExport
+      security:
+        - bearerAuth: [experiences:write]
+      parameters:
+        - $ref: "#/components/parameters/ExportId"
+      responses:
+        "204":
+          description: Cloud copy deleted.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/discovery/cases:
+    get:
+      tags: [discovery]
+      summary: Public, approved, not-retracted experience cases.
+      description: |
+        Anonymous read without a bearer token; Cloud filters, sorts and
+        paginates on the server side and never exposes private exports.
+        Default order is featured DESC, published_at DESC. Public rows always
+        have published_at because they passed approve.
+      operationId: listDiscoveryCases
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ModelFilter"
+        - $ref: "#/components/parameters/RuntimeKindFilter"
+        - $ref: "#/components/parameters/GpuArchFilter"
+        - $ref: "#/components/parameters/GpuProductFilter"
+        - $ref: "#/components/parameters/LoadBucketFilter"
+        - $ref: "#/components/parameters/FeaturedFilter"
+        - $ref: "#/components/parameters/OutcomeFilter"
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Case page ordered by featured then published_at.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryCasePageV2"
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/discovery/cases/{case_id}:
+    get:
+      tags: [discovery]
+      summary: One public case projection.
+      description: |
+        Anonymous read; retracted, deleted or non-public cases answer 404
+        without revealing their existence.
+      operationId: getDiscoveryCase
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      responses:
+        "200":
+          description: Public case projection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryCaseV2"
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/discovery/facets:
+    get:
+      tags: [discovery]
+      summary: Distinct hardware and model facets over current public cases.
+      description: |
+        Anonymous. Returns hardware[] (gpu_product, gpu_count, vram_gib,
+        load_bucket, case_count) and models[] (model_id, quantization,
+        load_bucket, case_count), each ordered by count DESC and capped at
+        100. Empty public set returns empty arrays. Clients must use these
+        values to populate compare dropdowns; they must not invent cohort keys.
+      operationId: listDiscoveryFacets
+      security: []
+      responses:
+        "200":
+          description: Facet lists for compare selectors.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryFacetsV1"
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/discovery/cases/{case_id}/reproduction-intent:
+    get:
+      tags: [discovery]
+      summary: Download a server-issued local reproduction intent.
+      description: |
+        Issued on the server with UTC issued_at and expires_at (+24h) from
+        the current public projection; retracted, deleted or non-public
+        cases answer 404. The intent carries goals and constraints only.
+      operationId: getReproductionIntent
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      responses:
+        "200":
+          description: Server-issued reproduction intent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReproductionIntentV1"
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/discovery/cases/{case_id}/report:
+    post:
+      tags: [discovery]
+      summary: Report a public case with a fixed reason.
+      operationId: reportDiscoveryCase
+      security:
+        - bearerAuth: [discovery:report]
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaseReportRequestV1"
+      responses:
+        "200":
+          description: Report receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaseReportReceiptV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/discovery/cases/{case_id}/appeal:
+    post:
+      tags: [discovery]
+      summary: Submit an appeal by the case publisher.
+      description: |
+        The publisher is derived from the bearer token; other accounts
+        cannot appeal and see the same 404 as non-publishers.
+      operationId: appealDiscoveryCase
+      security:
+        - bearerAuth: [experiences:write]
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppealRequestV1"
+      responses:
+        "200":
+          description: Appeal receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppealReceiptV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/compare/hardware:
+    get:
+      tags: [compare]
+      summary: Same-hardware selection list and scatter points (no ranks).
+      description: |
+        Anonymous GET; optional Bearer. Facet parameters are required and
+        must come from /v1/discovery/facets. Returns at most 50 public rows
+        that share gpu_product + gpu_count + vram_gib + load_bucket. No
+        rank field. Logged-in responses may mark the caller's own point
+        mine=true; anonymous responses never include mine or subject.
+      operationId: compareHardware
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/GpuProductRequired"
+        - $ref: "#/components/parameters/GpuCountRequired"
+        - $ref: "#/components/parameters/VramGibRequired"
+        - $ref: "#/components/parameters/LoadBucketRequired"
+      responses:
+        "200":
+          description: Same-hardware comparison (may be empty).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompareResultV1"
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/compare/model:
+    get:
+      tags: [compare]
+      summary: Same-model selection list and scatter points (no ranks).
+      description: |
+        Anonymous GET; optional Bearer. Facet parameters are required and
+        must come from /v1/discovery/facets. Key is model_id + quantization
+        + load_bucket. Same privacy rules as /v1/compare/hardware.
+      operationId: compareModel
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ModelIdRequired"
+        - $ref: "#/components/parameters/QuantizationRequired"
+        - $ref: "#/components/parameters/LoadBucketRequired"
+      responses:
+        "200":
+          description: Same-model comparison (may be empty).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompareResultV1"
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/rankings/cohorts:
+    get:
+      tags: [rankings]
+      summary: Cohorts that currently have at least one ranking-eligible row.
+      description: |
+        Anonymous. Returns at most 100 cohort keys (11 fields + entry_count).
+        Empty means the rankings page must show the empty-state rules, not
+        compare data.
+      operationId: listRankingCohorts
+      security: []
+      responses:
+        "200":
+          description: Eligible cohort list, possibly empty.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RankingCohortPageV1"
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/rankings:
+    get:
+      tags: [rankings]
+      summary: Official cohort ranking for one required 11-field cohort.
+      description: |
+        Anonymous GET; optional Bearer. Cohort parameters are required and
+        must come from /v1/rankings/cohorts. No eligible rows → 200 with
+        empty items, empty_reason and rules. Never 404 for an empty cohort.
+      operationId: listRankings
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/GpuProductRequired"
+        - $ref: "#/components/parameters/GpuCountRequired"
+        - $ref: "#/components/parameters/VramGibRequired"
+        - $ref: "#/components/parameters/ModelIdRequired"
+        - name: revision
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 200
+        - $ref: "#/components/parameters/QuantizationRequired"
+        - $ref: "#/components/parameters/RuntimeKindRequired"
+        - name: runtime_major
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9]+$"
+            maxLength: 16
+        - $ref: "#/components/parameters/LoadBucketRequired"
+        - name: driver_major
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9]+(\\.[0-9]+)?$"
+            maxLength: 16
+        - name: cuda_major
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9]+(\\.[0-9]+)?$"
+            maxLength: 16
+      responses:
+        "200":
+          description: Ranking page or empty-state with rules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RankingResultV1"
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/admin/experience-exports:
+    get:
+      tags: [admin]
+      summary: Moderation queue of experience exports.
+      description: |
+        Requires admin claim and `moderation:write` (same governance scope as
+        writes; Phase 4 does not add moderation:read). Filter by
+        publication_status for pending_review, rejected or public queues.
+      operationId: listAdminExperienceExports
+      security:
+        - bearerAuth: [moderation:write]
+      parameters:
+        - name: publication_status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/PublicationStatus"
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Admin export queue page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceExportPageV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/admin/experience-exports/{export_id}/moderate:
+    post:
+      tags: [admin]
+      summary: Approve, reject, restrict or remove an export publication (admin + moderation scope).
+      description: |
+        Moderator identity comes from the token's admin claim; the reason is
+        written to the admin audit activity. `approve` writes published_at.
+        `reject` requires a reason and moves pending_review to rejected.
+      operationId: moderateExperienceExport
+      security:
+        - bearerAuth: [moderation:write]
+      parameters:
+        - $ref: "#/components/parameters/ExportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModerateRequestV1"
+      responses:
+        "200":
+          description: Export state after moderation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceExportStateV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/admin/experience-exports/{export_id}/feature:
+    post:
+      tags: [admin]
+      summary: Toggle featured on a public export (admin + moderation scope).
+      description: |
+        Featured is not a publication state and never produces a rank. Only
+        public rows may be featured; any other status is 409. Leaving public
+        (restrict/remove/retract/delete) clears featured in the same
+        transaction.
+      operationId: featureExperienceExport
+      security:
+        - bearerAuth: [moderation:write]
+      parameters:
+        - $ref: "#/components/parameters/ExportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeatureRequestV1"
+      responses:
+        "200":
+          description: Export state after the featured flag change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperienceExportStateV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/admin/catalog/import:
+    post:
+      tags: [admin]
+      summary: Import catalog entries as new draft versions (admin only).
+      description: |
+        Requires an admin claim/group mapped by the deployment. Every import
+        creates new draft versions; active versions are never overwritten.
+      operationId: importCatalog
+      security:
+        - bearerAuth: [recommendations:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogImportRequest"
+      responses:
+        "200":
+          description: Imported draft versions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogImportResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/admin/catalog/{entry_id}/activate:
+    post:
+      tags: [admin]
+      summary: Activate the latest draft version of a catalog entry (admin only).
+      operationId: activateCatalogEntry
+      security:
+        - bearerAuth: [recommendations:read]
+      parameters:
+        - $ref: "#/components/parameters/EntryId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminActionRequest"
+      responses:
+        "200":
+          description: Entry state after activation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogEntryState"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/admin/catalog/{entry_id}/retract:
+    post:
+      tags: [admin]
+      summary: Retract the active version of a catalog entry (admin only).
+      description: Retracted versions are excluded from recommendations immediately.
+      operationId: retractCatalogEntry
+      security:
+        - bearerAuth: [recommendations:read]
+      parameters:
+        - $ref: "#/components/parameters/EntryId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminActionRequest"
+      responses:
+        "200":
+          description: Entry state after retraction.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogEntryState"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/admin/devices/{device_id}/disable:
+    post:
+      tags: [admin]
+      summary: Disable a device so it stops receiving business responses (admin only).
+      description: Disabled devices are rejected on business endpoints; local data is unaffected.
+      operationId: disableDevice
+      security:
+        - bearerAuth: [recommendations:read]
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminActionRequest"
+      responses:
+        "200":
+          description: Device state after disabling.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceStatus"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/admin/activity:
+    get:
+      tags: [admin]
+      summary: List governance activity for operators (admin + moderation scope).
+      description: |
+        Reports, appeals and moderation results written to activity_events;
+        account subjects stay server-side and actors are not exposed.
+      operationId: listAdminActivity
+      security:
+        - bearerAuth: [moderation:write]
+      parameters:
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Governance events, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityPageV1"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        OIDC access token for the API `aud` value; ID tokens must be
+        rejected by the server.
+  parameters:
+    ExportId:
+      name: export_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^exp-[a-z0-9-]{26,64}$"
+      description: Core-generated non-sensitive export identifier.
+    InstallationHash:
+      name: X-Bittune-Installation-Hash
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: "^sha256:[a-f0-9]{64}$"
+      description: |
+        Hash of the local installation id. It selects which binding the
+        calling installation refers to; Cloud verifies that binding belongs
+        to the token's account and ignores account-identifying fields.
+    EntryId:
+      name: entry_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9._-]{1,128}$"
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^dev-[a-z0-9-]{26,64}$"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    InstallationHashOptional:
+      name: X-Bittune-Installation-Hash
+      in: header
+      required: false
+      schema:
+        type: string
+        pattern: "^sha256:[a-f0-9]{64}$"
+      description: |
+        Local device clients send this header; Cloud Web may omit it and the
+        request is then scoped to the export owner from the bearer subject.
+    Handle:
+      name: handle
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+      description: Unique lowercase public profile handle.
+    CaseId:
+      name: case_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^case-[a-z0-9-]{26,64}$"
+      description: Public case identifier derived from the export on the server.
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    ModelFilter:
+      name: model_id
+      in: query
+      required: false
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9._/-]{1,256}$"
+    RuntimeKindFilter:
+      name: runtime_kind
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/RuntimeKind"
+    GpuArchFilter:
+      name: gpu_arch
+      in: query
+      required: false
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9._-]{1,64}$"
+    OutcomeFilter:
+      name: outcome
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/Outcome"
+    GpuProductFilter:
+      name: gpu_product
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$"
+    LoadBucketFilter:
+      name: load_bucket
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/LoadBucket"
+    FeaturedFilter:
+      name: featured
+      in: query
+      required: false
+      schema:
+        type: boolean
+    GpuProductRequired:
+      name: gpu_product
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$"
+    GpuCountRequired:
+      name: gpu_count
+      in: query
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 256
+    VramGibRequired:
+      name: vram_gib
+      in: query
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2048
+    LoadBucketRequired:
+      name: load_bucket
+      in: query
+      required: true
+      schema:
+        $ref: "#/components/schemas/LoadBucket"
+    ModelIdRequired:
+      name: model_id
+      in: query
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9._/-]{1,256}$"
+    QuantizationRequired:
+      name: quantization
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    RuntimeKindRequired:
+      name: runtime_kind
+      in: query
+      required: true
+      schema:
+        $ref: "#/components/schemas/RuntimeKind"
+  responses:
+    Error:
+      description: Expected error in the stable envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unauthorized:
+      description: Missing, expired or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Forbidden:
+      description: Insufficient scope, disabled device, or missing admin claim.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Requested resource belongs to another scope or does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Conflict:
+      description: State conflict, e.g. same export id with different content hash.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ValidationFailed:
+      description: Envelope or payload failed frozen-schema validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          example: "0.1.0"
+      additionalProperties: false
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+      additionalProperties: false
+
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          maxLength: 1024
+        details:
+          type: object
+          additionalProperties: true
+          description: Structured detail, never secrets or raw request bodies.
+      additionalProperties: false
+
+    ErrorCode:
+      type: string
+      enum:
+        - unsupported_contract
+        - invalid_request
+        - validation_failed
+        - unauthorized
+        - token_expired
+        - insufficient_scope
+        - admin_required
+        - device_not_bound
+        - device_disabled
+        - account_conflict
+        - not_found
+        - conflict
+        - payload_too_large
+        - too_many_requests
+        - not_implemented
+        - internal_error
+
+    # --- Device -----------------------------------------------------------
+
+    DeviceStatus:
+      type: object
+      required: [device_id, status, bound_at]
+      properties:
+        device_id:
+          type: string
+          pattern: "^dev-[a-z0-9-]{26,64}$"
+        status:
+          type: string
+          enum: [connected, disabled]
+        account_subject_hash:
+          type: string
+          description: sha256 of the bound OIDC subject; correlation only, not presentation.
+        installation_id_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        bound_at:
+          type: string
+          format: date-time
+        disabled_at:
+          type: string
+          format: date-time
+        disabled_reason:
+          type: string
+          maxLength: 512
+      additionalProperties: false
+
+    DeviceClaimRequest:
+      type: object
+      required: [installation_id_hash, client_version]
+      properties:
+        installation_id_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+          description: Hash of the local installation id; the claim key, never raw identity.
+        client_version:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,64}$"
+        device_name:
+          type: string
+          maxLength: 128
+      additionalProperties: false
+
+    DeviceClaimResponse:
+      type: object
+      required: [device_id, status, account_subject_hash, bound_at]
+      properties:
+        device_id:
+          type: string
+          pattern: "^dev-[a-z0-9-]{26,64}$"
+        status:
+          type: string
+          enum: [connected, disabled]
+        account_subject_hash:
+          type: string
+        bound_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    # --- Recommendation ---------------------------------------------------
+
+    VramBucket:
+      type: string
+      enum: [lt8GiB, 8-16GiB, 16-24GiB, 24-48GiB, 48-80GiB, gte80GiB]
+      description: Cores compute these from raw snapshots; Cloud only compares bucket ids.
+
+    TokenBucket:
+      type: string
+      enum: [0-2048, 2049-8192, 8193-32768, 32769+]
+
+    LoadBucket:
+      type: string
+      enum: ["1", "2-8", "9-32", "33+"]
+
+    RuntimeKind:
+      type: string
+      enum: [vllm, sglang]
+
+    ModelRef:
+      type: object
+      required: [model_id, revision, quantization]
+      properties:
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        revision:
+          type: string
+          maxLength: 200
+        quantization:
+          type: string
+          maxLength: 64
+      additionalProperties: false
+
+    RuntimeSpec:
+      type: object
+      required: [runtime_kind, runtime_major, image_repository, image_digest]
+      properties:
+        runtime_kind:
+          $ref: "#/components/schemas/RuntimeKind"
+        runtime_major:
+          type: string
+          pattern: "^[0-9]+$"
+          maxLength: 16
+        image_repository:
+          type: string
+          maxLength: 512
+        image_digest:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+      additionalProperties: false
+
+    EnvironmentRequirements:
+      type: object
+      required: [gpu_arch, min_gpu_count, vram_bucket]
+      properties:
+        gpu_arch:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,64}$"
+        min_gpu_count:
+          type: integer
+          minimum: 1
+          maximum: 256
+        vram_bucket:
+          $ref: "#/components/schemas/VramBucket"
+      additionalProperties: false
+
+    ConstraintsSummary:
+      type: object
+      required: [max_memory_percent, must_be_offline]
+      properties:
+        max_memory_percent:
+          type: integer
+          minimum: 1
+          maximum: 100
+        must_be_offline:
+          type: boolean
+      additionalProperties: false
+
+    OutcomeSummary:
+      type: object
+      required: [success_count, no_gain_count, failure_count, cancelled_count]
+      properties:
+        success_count:
+          type: integer
+          minimum: 0
+        no_gain_count:
+          type: integer
+          minimum: 0
+        failure_count:
+          type: integer
+          minimum: 0
+        cancelled_count:
+          type: integer
+          minimum: 0
+        sample_from:
+          type: string
+          format: date-time
+        sample_to:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    RecommendationQueryEnvelopeV2:
+      type: object
+      required: [schema_version, client_version, request_id, payload]
+      properties:
+        schema_version:
+          type: string
+          enum: [recommendation-v2]
+        client_version:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,64}$"
+        request_id:
+          type: string
+          pattern: "^req-[a-z0-9-]{26,64}$"
+        payload:
+          $ref: "#/components/schemas/RecommendationQueryPayloadV2"
+      additionalProperties: false
+
+    RecommendationQueryPayloadV2:
+      type: object
+      required: [intent, environment, constraints]
+      properties:
+        intent:
+          $ref: "#/components/schemas/ServingSearchIntent"
+        environment:
+          $ref: "#/components/schemas/EnvironmentSummaryV2"
+        target:
+          $ref: "#/components/schemas/TargetV2"
+        models:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/ModelRefV2"
+        scenario:
+          $ref: "#/components/schemas/ServingScenario"
+        workload:
+          $ref: "#/components/schemas/WorkloadRawV2"
+        workload_buckets:
+          $ref: "#/components/schemas/WorkloadBucketsV2"
+        sla:
+          $ref: "#/components/schemas/SlaV2"
+        layout:
+          $ref: "#/components/schemas/LayoutV2"
+        constraints:
+          $ref: "#/components/schemas/ConstraintsV2"
+      additionalProperties: false
+
+    ServingSearchIntent:
+      type: string
+      enum: [fit_model, search_layout, score_layout, shortlist_models, compare_models, coverage]
+
+    ServingScenario:
+      type: string
+      enum: [chat, rag, batch, coding]
+
+    EnvironmentSummaryV2:
+      type: object
+      required: [gpu_arch, gpu_count, vram_bucket, driver_major, cuda_major]
+      properties:
+        gpu_arch:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,64}$"
+        gpu_count:
+          type: integer
+          minimum: 1
+          maximum: 256
+        vram_bucket:
+          $ref: "#/components/schemas/VramBucket"
+        driver_major:
+          type: string
+          pattern: "^[0-9]+(\\.[0-9]+)?$"
+          maxLength: 16
+        cuda_major:
+          type: string
+          pattern: "^[0-9]+(\\.[0-9]+)?$"
+          maxLength: 16
+        gpu_product:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$"
+        vram_gib:
+          type: integer
+          minimum: 1
+          maximum: 2048
+      additionalProperties: false
+
+    TargetV2:
+      type: object
+      required: [model_id]
+      properties:
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        revision:
+          type: string
+          maxLength: 200
+        quantization:
+          type: string
+          maxLength: 64
+        runtime_kind:
+          $ref: "#/components/schemas/RuntimeKind"
+        runtime_major:
+          type: string
+          pattern: "^[0-9]+$"
+          maxLength: 16
+      additionalProperties: false
+
+    ModelRefV2:
+      type: object
+      required: [model_id]
+      properties:
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        revision:
+          type: string
+          maxLength: 200
+        quantization:
+          type: string
+          maxLength: 64
+      additionalProperties: false
+
+    ConstraintsV2:
+      type: object
+      required: [must_be_offline, max_memory_percent]
+      properties:
+        must_be_offline:
+          type: boolean
+        max_memory_percent:
+          type: integer
+          minimum: 1
+          maximum: 100
+        runtime_kind:
+          $ref: "#/components/schemas/RuntimeKind"
+        quantization:
+          type: string
+          maxLength: 64
+        max_candidate_gpus:
+          type: integer
+          minimum: 1
+          maximum: 256
+      additionalProperties: false
+
+    WorkloadRawV2:
+      type: object
+      required: [input_tokens, output_tokens, concurrency]
+      properties:
+        input_tokens:
+          type: integer
+          minimum: 1
+          maximum: 1048576
+        output_tokens:
+          type: integer
+          minimum: 1
+          maximum: 1048576
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 1024
+      additionalProperties: false
+
+    WorkloadBucketsV2:
+      type: object
+      required: [input_bucket, output_bucket, load_bucket]
+      properties:
+        input_bucket:
+          $ref: "#/components/schemas/TokenBucket"
+        output_bucket:
+          $ref: "#/components/schemas/TokenBucket"
+        load_bucket:
+          $ref: "#/components/schemas/LoadBucket"
+      additionalProperties: false
+
+    SlaV2:
+      type: object
+      minProperties: 1
+      properties:
+        ttft_ms:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        throughput_tokens_per_second:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+      additionalProperties: false
+
+    LayoutV2:
+      type: object
+      required: [runtime_kind, serving_config]
+      properties:
+        runtime_kind:
+          $ref: "#/components/schemas/RuntimeKind"
+        serving_config:
+          type: object
+          additionalProperties: true
+          description: Scalar serving parameters already clipped to the runtime whitelist.
+      additionalProperties: false
+
+    RecommendationQueryResponseV2:
+      type: object
+      required:
+        - schema_version
+        - rules_version
+        - request_id
+        - request_hash
+        - generated_at
+        - measurement_basis
+        - candidates
+      properties:
+        schema_version:
+          type: string
+          enum: [recommendation-v2]
+        rules_version:
+          type: string
+          enum: [serving_search-v1]
+        request_id:
+          type: string
+          pattern: "^req-[a-z0-9-]{26,64}$"
+        request_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        generated_at:
+          type: string
+          format: date-time
+        measurement_basis:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/MeasurementBasisV2"
+          description: |
+            Ordered unique sources. Stable order is account_history, catalog,
+            simulated. Any candidate with a prediction block requires simulated.
+        candidates:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/CandidateV2"
+        notes:
+          type: array
+          items:
+            type: string
+            maxLength: 512
+      additionalProperties: false
+
+    MeasurementBasisV2:
+      type: string
+      enum: [account_history, catalog, simulated]
+
+    CandidateV2:
+      type: object
+      required: [candidate_id, source]
+      properties:
+        candidate_id:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,128}$"
+          description: |
+            Opaque id unique within this response. Must not equal source.entry_id.
+            Catalog origin lives on source.entry_id.
+        catalog_version:
+          type: integer
+          minimum: 1
+        model_ref:
+          $ref: "#/components/schemas/CandidateModelRefV2"
+        runtime_spec:
+          $ref: "#/components/schemas/RuntimeSpec"
+        environment_requirements:
+          $ref: "#/components/schemas/EnvironmentRequirements"
+        serving_config:
+          type: object
+          additionalProperties: true
+        source:
+          $ref: "#/components/schemas/CandidateSourceV2"
+        prediction:
+          $ref: "#/components/schemas/PredictionV2"
+        risks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServingRiskCode"
+      additionalProperties: false
+
+    CandidateModelRefV2:
+      type: object
+      required: [model_id]
+      properties:
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        revision:
+          type: string
+          maxLength: 200
+        quantization:
+          type: string
+          maxLength: 64
+      additionalProperties: false
+
+    CandidateSourceV2:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [account_success, catalog, predicted_search, predicted_score, coverage]
+        entry_id:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,128}$"
+          description: Catalog entry id for deployable candidates. Must not equal candidate_id.
+        outcome_summary:
+          $ref: "#/components/schemas/OutcomeSummary"
+        first_seen_at:
+          type: string
+          format: date-time
+        last_success_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    PredictionV2:
+      type: object
+      required: [metrics, engine_version, measurement_basis]
+      properties:
+        metrics:
+          $ref: "#/components/schemas/PredictionMetricsV2"
+        engine_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        hardware:
+          type: string
+          minLength: 1
+          maxLength: 128
+        knowledge_pack_id:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,128}$"
+        measurement_basis:
+          type: string
+          enum: [simulated]
+      additionalProperties: false
+
+    PredictionMetricsV2:
+      type: object
+      properties:
+        mean_ttft_ms:
+          type: number
+        mean_tpot_ms:
+          type: number
+        output_throughput_tok_s:
+          type: number
+        completed_request_ratio:
+          type: number
+          minimum: 0
+          maximum: 1
+      additionalProperties: false
+      description: |
+        ITL, wall_time_ms, gpu_hours, p99_* and TPOT aliases are forbidden.
+
+    ServingRiskCode:
+      type: string
+      enum:
+        - history_sparse
+        - prediction_unavailable
+        - strict_sla_is_mean
+        - completed_request_ratio_low
+        - unsupported_hardware
+        - layout_not_deployable
+        - not_in_catalog
+        - account_success_stripped
+
+    CatalogCoverage:
+      type: string
+      enum: [none, empirical, hybrid, silicon]
+
+    # --- Experience export -------------------------------------------------
+
+    ExperienceExportPayload:
+      type: object
+      required:
+        - schema_version
+        - source_report_hash
+        - consent_confirmed
+        - consent_at
+        - evidence_level
+        - environment
+        - model
+        - runtime
+        - workload
+        - config
+        - outcome
+      properties:
+        schema_version:
+          type: string
+          enum: [experience-export-v2]
+        source_report_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        consent_confirmed:
+          type: boolean
+          enum: [true]
+          description: Cloud rejects any export without single-action consent.
+        consent_at:
+          type: string
+          format: date-time
+        evidence_level:
+          type: string
+          enum: [local_measured]
+          description: Written by Local only when a BenchmarkResult exists.
+        environment:
+          $ref: "#/components/schemas/ExportEnvironment"
+        model:
+          $ref: "#/components/schemas/ModelRef"
+        runtime:
+          $ref: "#/components/schemas/ExportRuntime"
+        workload:
+          $ref: "#/components/schemas/ExportWorkload"
+        config:
+          $ref: "#/components/schemas/ConfigSummary"
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+        metrics:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/MetricSummary"
+          description: Measured metric statistics; units and repetitions are mandatory.
+        baseline:
+          $ref: "#/components/schemas/ComparisonSummary"
+          description: Present only when the report has a comparable baseline.
+        candidate:
+          $ref: "#/components/schemas/ComparisonSummary"
+        delta:
+          $ref: "#/components/schemas/DeltaSummary"
+          description: Present only when a comparable baseline exists; never invented.
+      additionalProperties: false
+
+    ExportEnvironment:
+      type: object
+      required: [gpu_arch, gpu_count, vram_bucket, driver_major, cuda_major, driver_version, cuda_version, compute_capability]
+      properties:
+        gpu_arch:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,64}$"
+        gpu_count:
+          type: integer
+          minimum: 1
+          maximum: 256
+        vram_bucket:
+          $ref: "#/components/schemas/VramBucket"
+        vram_gib:
+          type: integer
+          minimum: 1
+          maximum: 2048
+          description: Present only when every GPU has the same GiB (floored). Mixed VRAM omits this key.
+        gpu_product:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$"
+          description: Present only when every GPU maps to the same product. Unmapped or mixed products omit this key.
+        driver_major:
+          type: string
+          pattern: "^[0-9]+(\\.[0-9]+)?$"
+          maxLength: 16
+        cuda_major:
+          type: string
+          pattern: "^[0-9]+(\\.[0-9]+)?$"
+          maxLength: 16
+        driver_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        cuda_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        compute_capability:
+          type: string
+          pattern: "^[0-9]+\\.[0-9]+$"
+          maxLength: 16
+        os:
+          type: string
+          maxLength: 64
+          description: Linux plus kernel major; never a hostname.
+        memory_gib:
+          type: integer
+          minimum: 1
+          maximum: 1048576
+      additionalProperties: false
+
+    ExportRuntime:
+      type: object
+      required: [runtime_kind, runtime_major, runtime_version]
+      properties:
+        runtime_kind:
+          $ref: "#/components/schemas/RuntimeKind"
+        runtime_major:
+          type: string
+          pattern: "^[0-9]+$"
+          maxLength: 16
+        runtime_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        image_digest:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+      additionalProperties: false
+
+    ExportWorkload:
+      type: object
+      required:
+        - input_tokens
+        - output_tokens
+        - concurrency
+        - request_count
+        - input_bucket
+        - output_bucket
+        - load_bucket
+        - workload_hash
+      properties:
+        input_tokens:
+          type: integer
+          minimum: 0
+          maximum: 1048576
+        output_tokens:
+          type: integer
+          minimum: 0
+          maximum: 1048576
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 1024
+        request_count:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        input_bucket:
+          $ref: "#/components/schemas/TokenBucket"
+        output_bucket:
+          $ref: "#/components/schemas/TokenBucket"
+        load_bucket:
+          $ref: "#/components/schemas/LoadBucket"
+        workload_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+      additionalProperties: false
+
+    RuntimeSummary:
+      type: object
+      required: [runtime_kind, runtime_major]
+      properties:
+        runtime_kind:
+          $ref: "#/components/schemas/RuntimeKind"
+        runtime_major:
+          type: string
+          pattern: "^[0-9]+$"
+          maxLength: 16
+        runtime_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        image_digest:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+      additionalProperties: false
+
+    WorkloadSummary:
+      type: object
+      required: [input_bucket, output_bucket, load_bucket, workload_hash]
+      properties:
+        input_tokens:
+          type: integer
+          minimum: 0
+          maximum: 1048576
+        output_tokens:
+          type: integer
+          minimum: 0
+          maximum: 1048576
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 1024
+        request_count:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        input_bucket:
+          $ref: "#/components/schemas/TokenBucket"
+        output_bucket:
+          $ref: "#/components/schemas/TokenBucket"
+        load_bucket:
+          $ref: "#/components/schemas/LoadBucket"
+        workload_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+      additionalProperties: false
+
+    ConfigSummary:
+      type: object
+      required: [config_hash]
+      properties:
+        config_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        fields:
+          type: object
+          additionalProperties: true
+          description: |
+            Allowed config fields only; field names are whitelisted and values
+            are plain JSON scalars, never secrets, paths or commands.
+      additionalProperties: false
+
+    Outcome:
+      type: string
+      enum: [success, no_gain, failure, cancelled]
+      description: |
+        success supports preferred parameters; no_gain and failure only form
+        risk notes; cancelled is ignored by recommendations.
+
+    MetricSummary:
+      type: object
+      required: [name, unit, repetitions, mean]
+      properties:
+        name:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,64}$"
+        unit:
+          type: string
+          maxLength: 32
+        repetitions:
+          type: integer
+          minimum: 1
+        mean:
+          type: number
+          minimum: 0
+        stdev:
+          type: number
+          minimum: 0
+      additionalProperties: false
+
+    ComparisonSummary:
+      type: object
+      required: [model_id, mean, unit, repetitions]
+      properties:
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        mean:
+          type: number
+          minimum: 0
+        unit:
+          type: string
+          maxLength: 32
+        repetitions:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+
+    DeltaSummary:
+      type: object
+      required: [unit, value_pct, target, objective_metric]
+      properties:
+        unit:
+          type: string
+          maxLength: 32
+        value_pct:
+          type: number
+          description: |
+            Improvement is positive. Local compare.py stores a raw signed
+            percent (latency -20 means 20% faster); v2 normalizes so
+            lower_better uses -delta_percent and higher_better keeps the raw
+            percent. Official rankings sort this field descending.
+        target:
+          type: string
+          enum: [higher_better, lower_better]
+        objective_metric:
+          type: string
+          enum:
+            - requests_per_second
+            - output_tokens_per_second
+            - input_tokens_per_second
+            - tokens_per_second
+            - success_rate
+            - mean_e2e_latency_ms
+            - mean_ttft_ms
+            - mean_tpot_ms
+            - mean_itl_ms
+          description: Official ranking only accepts mean_e2e_latency_ms.
+      additionalProperties: false
+
+    ExperienceReceipt:
+      type: object
+      required: [export_id, status, content_hash]
+      properties:
+        export_id:
+          type: string
+          pattern: "^exp-[a-z0-9-]{26,64}$"
+        status:
+          type: string
+          enum: [received, retracted]
+        content_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        received_at:
+          type: string
+          format: date-time
+        retracted_at:
+          type: string
+          format: date-time
+        idempotent_replay:
+          type: boolean
+          description: True when this receipt answers a repeated idempotent PUT.
+        idempotency_key:
+          type: string
+          maxLength: 128
+          description: Echoed caller correlation header, when supplied.
+      additionalProperties: false
+
+    RetractRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 512
+      additionalProperties: false
+
+    # --- Phase 3: profile, activity, data rights -------------------------
+
+    ProfileV1:
+      type: object
+      required: [handle, nickname, bio, locale, visibility, updated_at]
+      properties:
+        handle:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 80
+        bio:
+          type: string
+          maxLength: 512
+        locale:
+          type: string
+          enum: [zh-CN, en-US]
+        visibility:
+          type: string
+          enum: [private, public]
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+      description: The account's own profile; never carries the OIDC subject or token.
+
+    ProfilePatchV1:
+      type: object
+      minProperties: 1
+      properties:
+        handle:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 80
+        bio:
+          type: string
+          maxLength: 512
+        locale:
+          type: string
+          enum: [zh-CN, en-US]
+        visibility:
+          type: string
+          enum: [private, public]
+      additionalProperties: false
+      description: At least one field; account identity is never patchable here.
+
+    PublicProfileV1:
+      type: object
+      required: [handle, nickname, locale]
+      properties:
+        handle:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+        nickname:
+          type: string
+          maxLength: 80
+        bio:
+          type: string
+          maxLength: 512
+        locale:
+          type: string
+          enum: [zh-CN, en-US]
+      additionalProperties: false
+      description: Only public fields; visibility and timestamps stay private.
+
+    DeviceSummaryV1:
+      type: object
+      required: [device_id, status, bound_at]
+      properties:
+        device_id:
+          type: string
+          pattern: "^dev-[a-z0-9-]{26,64}$"
+        status:
+          type: string
+          enum: [connected, disabled]
+        bound_at:
+          type: string
+          format: date-time
+        disabled_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+      description: |
+        Private device summary for the owner; installation hashes, serials,
+        hostnames, IPs and paths are never included.
+
+    DeviceSummaryPageV1:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/DeviceSummaryV1"
+        total:
+          type: integer
+          minimum: 0
+      additionalProperties: false
+
+    ActivityEventV1:
+      type: object
+      required: [event_id, action, resource_type, resource_id, result, created_at]
+      properties:
+        event_id:
+          type: string
+          pattern: "^evt-[a-z0-9-]{26,64}$"
+        action:
+          type: string
+          pattern: "^[a-z0-9._-]{1,64}$"
+        resource_type:
+          type: string
+          pattern: "^[a-z0-9._-]{1,64}$"
+        resource_id:
+          type: string
+          maxLength: 128
+        result:
+          type: string
+          maxLength: 64
+        details:
+          type: object
+          additionalProperties: true
+          description: Redacted structured detail, never secrets or raw payloads.
+        created_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    ActivityPageV1:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/ActivityEventV1"
+        next_offset:
+          type: integer
+          minimum: 0
+          description: Present when more events exist; pass it back as offset.
+      additionalProperties: false
+
+    ExperienceExportStateV1:
+      type: object
+      required:
+        - export_id
+        - transport_status
+        - publication_status
+        - visibility_scope
+        - author_display
+        - content_hash
+        - received_at
+      properties:
+        export_id:
+          type: string
+          pattern: "^exp-[a-z0-9-]{26,64}$"
+        transport_status:
+          type: string
+          enum: [received, retracted]
+          description: Whether Cloud still stores the export as a fact source.
+        publication_status:
+          $ref: "#/components/schemas/PublicationStatus"
+        publication_title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        publication_summary:
+          type: string
+          maxLength: 500
+        rejection_reason:
+          type: string
+          maxLength: 512
+        featured:
+          type: boolean
+        featured_at:
+          type: string
+          format: date-time
+        published_at:
+          type: string
+          format: date-time
+          description: Written or updated only on approve. Non-approve transitions never change this column.
+        visibility_scope:
+          type: string
+          enum: [private, public]
+          description: Organization scope is not enabled and is never returned.
+        author_display:
+          type: string
+          enum: [anonymous, nickname]
+        content_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        source_report_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        received_at:
+          type: string
+          format: date-time
+        publication_consented_at:
+          type: string
+          format: date-time
+        withdrawn_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+        model_id:
+          type: string
+          description: Model id from the same ledger row. Omitted when empty.
+        gpu_product:
+          type: string
+          description: GPU product name from the same ledger row. Omitted when unmapped.
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+          description: Outcome from the same ledger row. Omitted when empty.
+      additionalProperties: false
+
+    ExperienceExportPageV1:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/ExperienceExportStateV1"
+        next_offset:
+          type: integer
+          minimum: 0
+          description: Present when more exports exist; pass it back as offset.
+      additionalProperties: false
+
+    ConsentField:
+      type: string
+      enum:
+        - environment_summary
+        - model_summary
+        - runtime_summary
+        - workload_summary
+        - config_summary
+        - metrics_summary
+        - outcome
+        - comparison_summary
+
+    PublicationStatus:
+      type: string
+      enum: [private, pending_review, public, rejected, restricted, retracted, deleted]
+
+    PublicationRequestV1:
+      type: object
+      required: [visibility_scope, author_display, consent_version, consent_fields, confirmed]
+      properties:
+        visibility_scope:
+          type: string
+          enum: [private, public]
+          description: Organization is not enabled and is rejected server-side.
+        author_display:
+          type: string
+          enum: [anonymous, nickname]
+        consent_version:
+          type: string
+          enum: [publication-v1]
+        consent_fields:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ConsentField"
+          description: |
+            Fixed field group only; public publication additionally requires
+            environment, model, runtime, workload, metrics and outcome.
+        confirmed:
+          type: boolean
+          enum: [true]
+          description: The second explicit confirmation; false is rejected.
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Required when visibility_scope is public.
+        summary:
+          type: string
+          maxLength: 500
+          description: Optional opinion text; never enters content_hash.
+      additionalProperties: false
+
+    ExperienceExportDetailV2:
+      type: object
+      required:
+        - export_id
+        - transport_status
+        - publication_status
+        - visibility_scope
+        - author_display
+        - content_hash
+        - received_at
+        - payload
+      properties:
+        export_id:
+          type: string
+          pattern: "^exp-[a-z0-9-]{26,64}$"
+        transport_status:
+          type: string
+          enum: [received, retracted]
+        publication_status:
+          $ref: "#/components/schemas/PublicationStatus"
+        visibility_scope:
+          type: string
+          enum: [private, public]
+        author_display:
+          type: string
+          enum: [anonymous, nickname]
+        content_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        source_report_hash:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        received_at:
+          type: string
+          format: date-time
+        publication_consented_at:
+          type: string
+          format: date-time
+        publication_title:
+          type: string
+          maxLength: 120
+        publication_summary:
+          type: string
+          maxLength: 500
+        rejection_reason:
+          type: string
+          maxLength: 512
+        featured:
+          type: boolean
+        featured_at:
+          type: string
+          format: date-time
+        published_at:
+          type: string
+          format: date-time
+        withdrawn_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: "#/components/schemas/ExperienceExportPayload"
+      additionalProperties: false
+
+    DataDeleteRequestV1:
+      type: object
+      required: [scope, confirmed]
+      properties:
+        scope:
+          type: string
+          enum: [cloud_data, account]
+        confirmed:
+          type: boolean
+          enum: [true]
+      additionalProperties: false
+
+    DataDeleteReceiptV1:
+      type: object
+      required: [scope, status, completed_at]
+      properties:
+        scope:
+          type: string
+          enum: [cloud_data, account]
+        status:
+          type: string
+          enum: [completed]
+        completed_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    DataExportBundleV1:
+      type: object
+      required: [profile, experience_exports, activity, exported_at]
+      properties:
+        profile:
+          $ref: "#/components/schemas/ProfileV1"
+        experience_exports:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/ExperienceExportStateV1"
+        activity:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/ActivityEventV1"
+        exported_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    # --- Phase 3: discovery and governance -------------------------------
+
+    CaseAuthorV1:
+      type: object
+      required: [author_display]
+      properties:
+        author_display:
+          type: string
+          enum: [anonymous, nickname]
+        handle:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+          description: Present only when the author chose nickname display.
+      additionalProperties: false
+
+    DiscoveryCaseV2:
+      type: object
+      required:
+        - case_id
+        - title
+        - author
+        - model
+        - runtime
+        - environment
+        - workload
+        - outcome
+        - evidence_level
+        - featured
+        - published_at
+      properties:
+        case_id:
+          type: string
+          pattern: "^case-[a-z0-9-]{26,64}$"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        summary:
+          type: string
+          maxLength: 500
+          description: Opinion text. Pages must label it as the author's view.
+        featured:
+          type: boolean
+        author:
+          $ref: "#/components/schemas/CaseAuthorV1"
+        model:
+          $ref: "#/components/schemas/ModelRef"
+        runtime:
+          $ref: "#/components/schemas/ExportRuntime"
+        environment:
+          $ref: "#/components/schemas/ExportEnvironment"
+          description: Product name when mapped; mixed or unmapped GPUs omit gpu_product.
+        workload:
+          $ref: "#/components/schemas/ExportWorkload"
+        config:
+          $ref: "#/components/schemas/ConfigSummary"
+          description: Present only when the publisher consented to config_summary.
+        metrics:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/MetricSummary"
+          description: Only measured metric statistics with units and repetitions.
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+        baseline:
+          $ref: "#/components/schemas/ComparisonSummary"
+        candidate:
+          $ref: "#/components/schemas/ComparisonSummary"
+        delta:
+          $ref: "#/components/schemas/DeltaSummary"
+        evidence_level:
+          type: string
+          enum: [local_measured]
+          description: Only exports with a local BenchmarkResult can publish.
+        published_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    DiscoveryCasePageV2:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/DiscoveryCaseV2"
+        total:
+          type: integer
+          minimum: 0
+        next_offset:
+          type: integer
+          minimum: 0
+          description: Present when more cases exist; pass it back as offset.
+      additionalProperties: false
+
+    HardwareFacetV1:
+      type: object
+      required: [gpu_product, gpu_count, vram_gib, load_bucket, case_count]
+      properties:
+        gpu_product:
+          type: string
+          maxLength: 64
+        gpu_count:
+          type: integer
+          minimum: 1
+          maximum: 256
+        vram_gib:
+          type: integer
+          minimum: 1
+          maximum: 2048
+        load_bucket:
+          $ref: "#/components/schemas/LoadBucket"
+        case_count:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+
+    ModelFacetV1:
+      type: object
+      required: [model_id, quantization, load_bucket, case_count]
+      properties:
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        quantization:
+          type: string
+          maxLength: 64
+        load_bucket:
+          $ref: "#/components/schemas/LoadBucket"
+        case_count:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+
+    DiscoveryFacetsV1:
+      type: object
+      required: [hardware, models]
+      properties:
+        hardware:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/HardwareFacetV1"
+        models:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/ModelFacetV1"
+      additionalProperties: false
+
+    ComparePointV1:
+      type: object
+      required: [case_id, outcome, latency_ms, output_tokens_per_second]
+      properties:
+        case_id:
+          type: string
+          pattern: "^case-[a-z0-9-]{26,64}$"
+        gpu_product:
+          type: string
+          maxLength: 64
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+        latency_ms:
+          type: number
+          minimum: 0
+        output_tokens_per_second:
+          type: number
+          minimum: 0
+        mine:
+          type: boolean
+          description: True only in an authenticated response for the caller's own point.
+      additionalProperties: false
+
+    CompareResultV1:
+      type: object
+      required: [facet, items, points, truncated]
+      properties:
+        facet:
+          type: string
+          enum: [hardware, model]
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/DiscoveryCaseV2"
+        points:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ComparePointV1"
+        truncated:
+          type: boolean
+      additionalProperties: false
+
+    RankingRulesV1:
+      type: object
+      required: [version, value_pct_positive_is_improvement, objective_metric, sort]
+      properties:
+        version:
+          type: string
+          enum: [cohort-rank-v1]
+        value_pct_positive_is_improvement:
+          type: boolean
+          enum: [true]
+        objective_metric:
+          type: string
+          enum: [mean_e2e_latency_ms]
+        sort:
+          type: string
+          enum: [value_pct_desc]
+        notes:
+          type: string
+          maxLength: 1024
+      additionalProperties: false
+
+    RankingItemV1:
+      type: object
+      required: [rank, case_id, value_pct, latency_ms, outcome]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        case_id:
+          type: string
+          pattern: "^case-[a-z0-9-]{26,64}$"
+        value_pct:
+          type: number
+        latency_ms:
+          type: number
+          minimum: 0
+        output_tokens_per_second:
+          type: number
+          minimum: 0
+          description: Present only when the ranking-eligible row also has throughput; omit rather than serialize 0.
+        outcome:
+          $ref: "#/components/schemas/Outcome"
+        mine:
+          type: boolean
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Publication title from the same ledger row. Omitted when empty; clients fall back to a short case code.
+        model_id:
+          type: string
+          description: Model id from the same ledger row.
+        gpu_product:
+          type: string
+          description: GPU product name when mapped; omitted when unmapped.
+      additionalProperties: false
+
+    RankingCohortKeyV1:
+      type: object
+      required:
+        - gpu_product
+        - gpu_count
+        - vram_gib
+        - model_id
+        - revision
+        - quantization
+        - runtime_kind
+        - runtime_major
+        - load_bucket
+        - driver_major
+        - cuda_major
+        - entry_count
+      properties:
+        gpu_product:
+          type: string
+          maxLength: 64
+        gpu_count:
+          type: integer
+          minimum: 1
+          maximum: 256
+        vram_gib:
+          type: integer
+          minimum: 1
+          maximum: 2048
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        revision:
+          type: string
+          maxLength: 200
+        quantization:
+          type: string
+          maxLength: 64
+        runtime_kind:
+          $ref: "#/components/schemas/RuntimeKind"
+        runtime_major:
+          type: string
+          pattern: "^[0-9]+$"
+          maxLength: 16
+        load_bucket:
+          $ref: "#/components/schemas/LoadBucket"
+        driver_major:
+          type: string
+          maxLength: 16
+        cuda_major:
+          type: string
+          maxLength: 16
+        entry_count:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+
+    RankingCohortPageV1:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/RankingCohortKeyV1"
+      additionalProperties: false
+
+    RankingResultV1:
+      type: object
+      required: [rules, items]
+      properties:
+        rules:
+          $ref: "#/components/schemas/RankingRulesV1"
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/RankingItemV1"
+        empty_reason:
+          type: string
+          maxLength: 512
+        points:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/ComparePointV1"
+          description: Scatter of ranking-eligible rows only.
+      additionalProperties: false
+
+    ReproductionIntentV1:
+      type: object
+      required:
+        - schema_version
+        - case_id
+        - issued_at
+        - expires_at
+        - model
+        - runtime
+        - workload
+        - constraints
+        - source_url
+      properties:
+        schema_version:
+          type: string
+          enum: [reproduction-intent-v1]
+        case_id:
+          type: string
+          pattern: "^case-[a-z0-9-]{26,64}$"
+        issued_at:
+          type: string
+          format: date-time
+          description: Server-generated RFC3339 UTC issue time.
+        expires_at:
+          type: string
+          format: date-time
+          description: issued_at + 24h; Local refuses expired intents.
+        model:
+          $ref: "#/components/schemas/ModelRef"
+        runtime:
+          $ref: "#/components/schemas/RuntimeSummary"
+        workload:
+          $ref: "#/components/schemas/WorkloadSummary"
+        constraints:
+          $ref: "#/components/schemas/ConstraintsSummary"
+        source_url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: |
+            Canonical same-origin case URL set by Cloud; no other URL is ever
+            accepted and the file never carries commands, paths or secrets.
+      additionalProperties: false
+
+    CaseReportReason:
+      type: string
+      enum: [not_verifiable, inaccurate, inappropriate, mislabeled]
+
+    CaseReportRequestV1:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          $ref: "#/components/schemas/CaseReportReason"
+        comment:
+          type: string
+          maxLength: 512
+      additionalProperties: false
+
+    CaseReportReceiptV1:
+      type: object
+      required: [case_id, reason, reported_at]
+      properties:
+        case_id:
+          type: string
+          pattern: "^case-[a-z0-9-]{26,64}$"
+        reason:
+          $ref: "#/components/schemas/CaseReportReason"
+        reported_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    AppealRequestV1:
+      type: object
+      required: [explanation]
+      properties:
+        explanation:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      additionalProperties: false
+
+    AppealReceiptV1:
+      type: object
+      required: [case_id, created_at]
+      properties:
+        case_id:
+          type: string
+          pattern: "^case-[a-z0-9-]{26,64}$"
+        created_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    ModerateRequestV1:
+      type: object
+      required: [action, reason]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject, restrict, remove]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+      additionalProperties: false
+
+    FeatureRequestV1:
+      type: object
+      required: [featured, reason]
+      properties:
+        featured:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+      additionalProperties: false
+
+    # --- Admin ------------------------------------------------------------
+
+    AdminActionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+      additionalProperties: false
+
+    CatalogImportRequest:
+      type: object
+      required: [reason, entries]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/CatalogEntryDraft"
+      additionalProperties: false
+
+    CatalogEntryDraft:
+      type: object
+      required:
+        - entry_id
+        - model_id
+        - model_revision
+        - quantization
+        - runtime_kind
+        - runtime_major
+        - runtime_image_repository
+        - runtime_image_digest
+        - license
+        - gpu_arch
+        - min_gpu_count
+        - vram_bucket
+        - allowed_config_fields
+      properties:
+        entry_id:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,128}$"
+        model_id:
+          type: string
+          pattern: "^[A-Za-z0-9._/-]{1,256}$"
+        model_revision:
+          type: string
+          minLength: 1
+          maxLength: 200
+        quantization:
+          type: string
+          minLength: 1
+          maxLength: 64
+        runtime_kind:
+          $ref: "#/components/schemas/RuntimeKind"
+        runtime_major:
+          type: string
+          pattern: "^[0-9]+$"
+          maxLength: 16
+        runtime_image_repository:
+          type: string
+          minLength: 1
+          maxLength: 512
+        runtime_image_digest:
+          type: string
+          pattern: "^sha256:[a-f0-9]{64}$"
+        license:
+          type: string
+          minLength: 1
+          maxLength: 128
+        gpu_arch:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,64}$"
+        min_gpu_count:
+          type: integer
+          minimum: 1
+          maximum: 256
+        vram_bucket:
+          $ref: "#/components/schemas/VramBucket"
+        allowed_config_fields:
+          type: array
+          maxItems: 64
+          items:
+            type: string
+            pattern: "^[A-Za-z0-9._-]{1,64}$"
+          description: Serving parameters the catalog approves for suggestions.
+        default_config:
+          type: object
+          additionalProperties: true
+          description: |
+            Default suggested serving parameters; field names validated
+            against allowed_config_fields during review.
+        notes:
+          type: string
+          maxLength: 1024
+        min_vram_gib:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          description: GiB floor compared with v2 environment.vram_gib. Omitted means bucket-only matching.
+        gpu_products:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$"
+        aisim_hardware:
+          type: string
+          minLength: 1
+          maxLength: 128
+        coverage:
+          $ref: "#/components/schemas/CatalogCoverage"
+        knowledge_pack_id:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,128}$"
+      additionalProperties: false
+
+    CatalogImportResponse:
+      type: object
+      required: [imported]
+      properties:
+        imported:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogEntryState"
+      additionalProperties: false
+
+    CatalogEntryState:
+      type: object
+      required: [entry_id, version, status]
+      properties:
+        entry_id:
+          type: string
+          pattern: "^[A-Za-z0-9._-]{1,128}$"
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [draft, active, retracted]
+        activated_at:
+          type: string
+          format: date-time
+        retracted_at:
+          type: string
+          format: date-time
+      additionalProperties: false

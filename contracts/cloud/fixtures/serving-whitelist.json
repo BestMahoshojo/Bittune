@@ -1,0 +1,40 @@
+{
+  "vllm": [
+    "tensor_parallel_size",
+    "pipeline_parallel_size",
+    "dtype",
+    "max_model_len",
+    "max_num_seqs",
+    "max_num_batched_tokens",
+    "gpu_memory_utilization",
+    "swap_space_gib",
+    "enforce_eager",
+    "enable_prefix_caching"
+  ],
+  "sglang": [
+    "tensor_parallel_size",
+    "dtype",
+    "context_length",
+    "max_running_requests",
+    "chunked_prefill_size",
+    "mem_fraction_static",
+    "disable_cuda_graph",
+    "disable_radix_cache"
+  ],
+  "never": [
+    "replica",
+    "replicas",
+    "aggregated",
+    "disaggregated",
+    "prefill",
+    "decode",
+    "workers",
+    "gpu_device_ids",
+    "moe_tp",
+    "moe_ep",
+    "expert_parallel",
+    "attention_dp",
+    "dynamo",
+    "router"
+  ]
+}

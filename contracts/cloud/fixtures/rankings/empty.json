@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "version": "cohort-rank-v1",
+    "value_pct_positive_is_improvement": true,
+    "objective_metric": "mean_e2e_latency_ms",
+    "sort": "value_pct_desc",
+    "notes": "Official ranking only compares end-to-end latency improvement inside one cohort. value_pct is improvement-positive."
+  },
+  "items": [],
+  "empty_reason": "no ranking-eligible rows in this cohort"
+}

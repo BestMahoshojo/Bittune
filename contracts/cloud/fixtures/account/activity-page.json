@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "event_id": "evt-0f9619ff8b86d011c42f7d3b0a",
+      "action": "experience.export.received",
+      "resource_type": "experience_export",
+      "resource_id": "exp-2a3c4d5e6f708192a3b4c5d6e",
+      "result": "received",
+      "details": { "content_hash_present": true },
+      "created_at": "2026-09-01T09:12:04Z"
+    }
+  ]
+}

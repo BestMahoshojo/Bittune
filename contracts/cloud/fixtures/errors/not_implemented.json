@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "not_implemented",
+    "message": "phase 2: account profile",
+    "details": { "planned_phase": 2 }
+  }
+}

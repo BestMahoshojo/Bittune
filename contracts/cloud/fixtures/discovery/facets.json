@@ -1,0 +1,19 @@
+{
+  "hardware": [
+    {
+      "gpu_product": "RTX 4090",
+      "gpu_count": 1,
+      "vram_gib": 24,
+      "load_bucket": "2-8",
+      "case_count": 1
+    }
+  ],
+  "models": [
+    {
+      "model_id": "Qwen/Qwen2.5-72B-Instruct",
+      "quantization": "awq",
+      "load_bucket": "2-8",
+      "case_count": 1
+    }
+  ]
+}

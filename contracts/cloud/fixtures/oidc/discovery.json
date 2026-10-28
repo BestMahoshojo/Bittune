@@ -1,0 +1,15 @@
+{
+  "issuer": "https://login.example.com/realms/bittune",
+  "authorization_endpoint": "https://login.example.com/realms/bittune/protocol/openid-connect/auth",
+  "token_endpoint": "https://login.example.com/realms/bittune/protocol/openid-connect/token",
+  "device_authorization_endpoint": "https://login.example.com/realms/bittune/protocol/openid-connect/auth/device",
+  "jwks_uri": "https://login.example.com/realms/bittune/protocol/openid-connect/certs",
+  "userinfo_endpoint": "https://login.example.com/realms/bittune/protocol/openid-connect/userinfo",
+  "end_session_endpoint": "https://login.example.com/realms/bittune/protocol/openid-connect/logout",
+  "response_types_supported": ["code", "id_token", "token"],
+  "grant_types_supported": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "scopes_supported": ["openid", "offline_access", "profile", "recommendations:read", "experiences:write"],
+  "token_endpoint_auth_methods_supported": ["none", "client_secret_basic"]
+}

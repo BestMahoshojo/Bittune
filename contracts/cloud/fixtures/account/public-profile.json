@@ -1,0 +1,6 @@
+{
+  "handle": "tune-owner-01",
+  "nickname": "Tune Owner",
+  "bio": "Runs local vLLM benchmarks on a single GPU box.",
+  "locale": "zh-CN"
+}

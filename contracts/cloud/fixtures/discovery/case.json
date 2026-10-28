@@ -1,0 +1,46 @@
+{
+  "case_id": "case-2a3c4d5e6f708192a3b4c5d6e0",
+  "title": "RTX 4090 上 Qwen2.5-72B 时延下降 20%",
+  "summary": "同一负载下调低 KV cache 压力后端到端时延下降。",
+  "featured": true,
+  "author": { "author_display": "nickname", "handle": "tune-owner-01" },
+  "model": { "model_id": "Qwen/Qwen2.5-72B-Instruct", "revision": "a09a35458c702b33eeacc393d103063234e8bc28", "quantization": "awq" },
+  "runtime": { "runtime_kind": "vllm", "runtime_major": "0", "runtime_version": "0.8.5", "image_digest": "sha256:3b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c" },
+  "environment": {
+    "gpu_arch": "Ada",
+    "gpu_count": 1,
+    "vram_bucket": "24-48GiB",
+    "vram_gib": 24,
+    "gpu_product": "RTX 4090",
+    "driver_major": "550",
+    "cuda_major": "12",
+    "driver_version": "550.90.07",
+    "cuda_version": "12.4",
+    "compute_capability": "8.9",
+    "os": "Linux 6",
+    "memory_gib": 128
+  },
+  "workload": {
+    "input_tokens": 4096,
+    "output_tokens": 256,
+    "concurrency": 4,
+    "request_count": 32,
+    "input_bucket": "2049-8192",
+    "output_bucket": "0-2048",
+    "load_bucket": "2-8",
+    "workload_hash": "sha256:1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2"
+  },
+  "metrics": [
+    { "name": "mean_e2e_latency_ms", "unit": "ms", "repetitions": 3, "mean": 480.0, "stdev": 12.5 },
+    { "name": "output_tokens_per_second", "unit": "tokens/s", "repetitions": 3, "mean": 4210.7, "stdev": 88.2 }
+  ],
+  "outcome": "success",
+  "delta": {
+    "unit": "ms",
+    "value_pct": 20.0,
+    "target": "lower_better",
+    "objective_metric": "mean_e2e_latency_ms"
+  },
+  "evidence_level": "local_measured",
+  "published_at": "2026-09-02T02:00:00Z"
+}

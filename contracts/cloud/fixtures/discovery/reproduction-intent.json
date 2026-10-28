@@ -1,0 +1,16 @@
+{
+  "schema_version": "reproduction-intent-v1",
+  "case_id": "case-2a3c4d5e6f708192a3b4c5d6e0",
+  "issued_at": "2026-09-04T08:00:00Z",
+  "expires_at": "2026-09-05T08:00:00Z",
+  "model": { "model_id": "Qwen/Qwen3-8B", "revision": "qwen3-8b-fp8", "quantization": "fp8" },
+  "runtime": { "runtime_kind": "vllm", "runtime_major": "0" },
+  "workload": {
+    "input_bucket": "2049-8192",
+    "output_bucket": "0-2048",
+    "load_bucket": "2-8",
+    "workload_hash": "sha256:8e209cf0a4a3fa7d1e7ca90d29d2b1b74bf9e8cd0f6b8ab4567890abcdef1234"
+  },
+  "constraints": { "max_memory_percent": 90, "must_be_offline": false },
+  "source_url": "https://cloud.example.com/v1/discovery/cases/case-2a3c4d5e6f708192a3b4c5d6e0"
+}

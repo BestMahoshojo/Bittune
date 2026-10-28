@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "payload failed frozen-schema validation",
+    "details": { "field": "payload.target.input_tokens" }
+  }
+}

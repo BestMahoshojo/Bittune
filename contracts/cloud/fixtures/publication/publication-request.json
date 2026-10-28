@@ -1,0 +1,16 @@
+{
+  "visibility_scope": "public",
+  "author_display": "nickname",
+  "consent_version": "publication-v1",
+  "consent_fields": [
+    "environment_summary",
+    "model_summary",
+    "runtime_summary",
+    "workload_summary",
+    "metrics_summary",
+    "outcome"
+  ],
+  "confirmed": true,
+  "title": "RTX 4090 上 Qwen2.5-72B 时延下降 20%",
+  "summary": "同一负载下调低 KV cache 压力后端到端时延下降。"
+}

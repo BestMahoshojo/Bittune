@@ -1,0 +1,27 @@
+{
+  "entry_id": "qwen25-72b-awq-vllm",
+  "model_id": "Qwen/Qwen2.5-72B-Instruct",
+  "model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "quantization": "awq",
+  "runtime_kind": "vllm",
+  "runtime_major": "0",
+  "runtime_image_repository": "registry.example.com/bittune/vllm-runtime",
+  "runtime_image_digest": "sha256:3b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+  "license": "apache-2.0",
+  "gpu_arch": "Hopper",
+  "min_gpu_count": 8,
+  "vram_bucket": "48-80GiB",
+  "allowed_config_fields": ["tensor_parallel_size", "pipeline_parallel_size", "max_model_len", "gpu_memory_utilization", "max_num_seqs"],
+  "default_config": {
+    "tensor_parallel_size": 8,
+    "pipeline_parallel_size": 1,
+    "max_model_len": 32768,
+    "gpu_memory_utilization": 0.9,
+    "max_num_seqs": 256
+  },
+  "min_vram_gib": 40,
+  "gpu_products": ["H100"],
+  "aisim_hardware": "h100_sxm",
+  "coverage": "silicon",
+  "knowledge_pack_id": "pack-h100-qwen72b-chat"
+}

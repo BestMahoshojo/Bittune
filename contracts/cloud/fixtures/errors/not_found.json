@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "not_found",
+    "message": "resource not found in the current account scope"
+  }
+}

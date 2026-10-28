@@ -1,0 +1,10 @@
+{
+  "schema_version": "recommendation-v2",
+  "rules_version": "serving_search-v1",
+  "request_id": "req-1c3a4b5c6d7e8f9a0b1c2d3e4f5a6b",
+  "request_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "generated_at": "2026-09-01T08:05:00Z",
+  "measurement_basis": ["catalog"],
+  "candidates": [],
+  "notes": ["layout_not_deployable"]
+}

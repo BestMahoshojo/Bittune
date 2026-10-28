@@ -1,0 +1,15 @@
+{
+  "n": 90.0,
+  "big": 1000000.0,
+  "frac": 0.0166,
+  "tiny": 1e-06,
+  "neg": -0.5,
+  "nested": [
+    1.5,
+    2.0
+  ],
+  "flag": true,
+  "text": "x",
+  "html": "<div data-x=\"1\">&amp;</div>",
+  "unicode": "中文 · α → β"
+}

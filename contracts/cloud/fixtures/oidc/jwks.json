@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "n": "xE1jgsvJHoHQGlQCcH9ZA3DywbcMCjuisz_umYNhkUZGzH1lXoj5R_el0KBfNUV1fS0TOdVD3ebeY0Mj8BynAIJfATFW-g6KdW4lsw9O0CrEbDCg21Ikk_QdbB_QfX7-4OY9l32AAcUPIsDOMfxT9yFu-xO-YkGTSkZ2wTvfMrnPhoOTdMCUT7I6NVhg6rZkIInYWIROekOLF2dG7x3AS47uPKI6KtCZlfUCViM6DtFEzJDCk6UbdOVwEJgDb5X0lUFdUNA6FYwjWUVmJxGUkkA16_VrkAtGW1-V_QuHhRDFQJsBwQeHyblTY8HJmYbskdOOmORyxq5AcaQFtS6EXw",
+      "e": "AQAB",
+      "kid": "bittune-test-2026",
+      "alg": "RS256",
+      "use": "sig"
+    }
+  ]
+}
